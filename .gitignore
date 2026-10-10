@@ -1,0 +1,26 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Configuration & Secrets (contains router password & private MACs)
+config.json
+
+# Runtime State & Logs
+state.json
+*.log
+qos.log
+
+# Environments
+.env
+.venv
+env/
+venv/
+
+# Editor directories and files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store

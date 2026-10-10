@@ -1,0 +1,11 @@
+{
+  "router_ip": "192.168.31.1",
+  "password": "YOUR_ROUTER_PASSWORD",
+  "speed_kb": 13,
+  "limit_time": "01:00",
+  "restore_time": "06:00",
+  "exclude_macs": [
+    "AA:BB:CC:DD:EE:01",
+    "AA:BB:CC:DD:EE:02"
+  ]
+}
