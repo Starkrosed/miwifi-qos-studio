@@ -7,5 +7,6 @@
   "exclude_macs": [
     "AA:BB:CC:DD:EE:01",
     "AA:BB:CC:DD:EE:02"
-  ]
+  ],
+  "state": 1
 }

@@ -26,6 +26,7 @@ import urllib.parse
 import mimetypes
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 import threading
+import subprocess
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(SCRIPT_DIR, "config.json")
@@ -66,16 +67,62 @@ logger.addHandler(stream_handler)
 
 def load_config():
     if os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+                if "state" not in cfg:
+                    cfg["state"] = 1
+                return cfg
+        except Exception as e:
+            logger.error(f"读取 config.json 失败: {e}")
     return {
         "router_ip": "192.168.31.1",
         "password": "",
+        "state": 1,
         "speed_kb": 13,
         "limit_time": "01:00",
         "restore_time": "06:00",
         "exclude_macs": []
     }
+
+def save_config(cfg):
+    try:
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        logger.error(f"保存 config.json 失败: {e}")
+        return False
+
+def get_system_state():
+    cfg = load_config()
+    return int(cfg.get("state", 1))
+
+def set_system_state(state_val):
+    try:
+        state_val = int(state_val)
+    except Exception:
+        return False, "无效的 state 参数"
+    if state_val not in (1, 2, 3):
+        return False, "state 仅支持 1 (正常运行), 2 (网页端正常/夜间巡检取消), 3 (全部停机关机)"
+
+    cfg = load_config()
+    old_st = cfg.get("state", 1)
+    cfg["state"] = state_val
+    save_config(cfg)
+
+    desc_map = {
+        1: "模式 1 (正常运行: 网页端正常，夜间巡检限速正常开启)",
+        2: "模式 2 (仅网页端正常运行，夜间巡检已取消，其余照旧)",
+        3: "模式 3 (全部停机关机: 路由器完全恢复全速，停止所有流控与 Web 服务)"
+    }
+    desc = desc_map.get(state_val, "")
+    logger.info(f"[系统模式变动] 运行状态由模式 {old_st} 切换至模式 {state_val}: {desc}")
+
+    if state_val == 3:
+        restore_rate_limit()
+
+    return True, desc
 
 def load_state():
     """读取放行标志位状态"""
@@ -515,9 +562,21 @@ def set_max_upload():
     speed = cfg.get("speed_kb", 13)
     return apply_rate_limit(up_kb=0, down_kb=speed, respect_exempt=True)
 
-def set_full_limit():
+def set_full_limit(is_scheduled=False):
     """上下行均限速 0.1 Mbps (13 KB/s)，尊重放行名单"""
     cfg = load_config()
+    cur_st = int(cfg.get("state", 1))
+    if is_scheduled:
+        if cur_st == 2:
+            logger.info("[系统模式 2] 网页端正常运行，夜间巡检限速已取消，跳过本次巡检。")
+            return True, []
+        elif cur_st == 3:
+            logger.info("[系统模式 3] 系统处于全部关机停机状态，跳过本次巡检。")
+            return True, []
+    elif cur_st == 3:
+        logger.warning("[系统模式 3] 系统当前处于停机状态，跳过限速执行。")
+        return False, []
+
     speed = cfg.get("speed_kb", 13)
     return apply_rate_limit(up_kb=speed, down_kb=speed, respect_exempt=True)
 
@@ -564,6 +623,7 @@ def get_status_data(force_refresh=False):
             "status": cached.get("status", {}),
             "band": cached.get("band", {}),
             "list": dev_list,
+            "system_state": int(cfg.get("state", 1)),
             "cached": True
         }
 
@@ -595,6 +655,7 @@ def get_status_data(force_refresh=False):
         "status": q_info.get("status", {}) if q_info else {"on": 1, "mode": 3},
         "band": q_info.get("band", {}) if q_info else {"upload": 1000, "download": 1000},
         "list": dev_list,
+        "system_state": int(cfg.get("state", 1)),
         "cached": False
     }
     _status_cache["data"] = result
@@ -606,6 +667,14 @@ def print_status():
     if not data:
         print("Failed to query router status.")
         return
+    cfg = load_config()
+    cur_st = int(cfg.get("state", 1))
+    state_names = {
+        1: "🟢 模式 1: 正常运行 (Web 控制台与夜间巡检限速全开)",
+        2: "🟡 模式 2: 仅网页端正常运行 (夜间巡检限速已取消，其余照旧)",
+        3: "🔴 模式 3: 全部停机关机 (恢复全速并停机)"
+    }
+    print(f"当前系统运行状态: {state_names.get(cur_st, '未知')}")
     status = data.get("status", {})
     band = data.get("band", {})
     devlist = data.get("list", [])
@@ -699,6 +768,43 @@ class QosHttpHandler(BaseHTTPRequestHandler):
         # 静态资源请求分发
         if not path.startswith("/api/"):
             self._serve_static_file(path)
+            return
+
+        # 系统运行状态查询与切换 (1=正常运行, 2=仅网页端正常/夜间巡检取消, 3=全部停机关机)
+        if path == "/api/system/state":
+            st_param = query.get("state", [None])[0]
+            if not st_param:
+                cur_st = get_system_state()
+                self._send_json({"code": 0, "state": cur_st})
+                return
+            try:
+                st_val = int(st_param)
+            except ValueError:
+                self._send_json({"code": 1, "message": "Invalid state parameter"}, 400)
+                return
+
+            ok, msg = set_system_state(st_val)
+            if not ok:
+                self._send_json({"code": 1, "message": msg}, 400)
+                return
+
+            self._send_json({
+                "code": 0,
+                "state": st_val,
+                "message": msg
+            })
+
+            # 若切换为 3 (全部停机关机)，延迟退出服务进程
+            if st_val == 3:
+                def _do_shutdown():
+                    time.sleep(0.8)
+                    logger.info("[系统停机] 正在退出 Web API 服务...")
+                    try:
+                        subprocess.run(["systemctl", "--user", "stop", "net-speed-api.service"], timeout=3)
+                    except Exception:
+                        pass
+                    os._exit(0)
+                threading.Thread(target=_do_shutdown, daemon=True).start()
             return
 
         # 开启网络波动模拟
@@ -807,10 +913,16 @@ class QosHttpHandler(BaseHTTPRequestHandler):
         pass
 
 def run_server(port=8899):
+    if not os.path.isdir(WEB_DIR):
+        logger.warning(f"[警告] 前端目录不存在: {WEB_DIR}，请确保 web/ 目录与 router_qos.py 同级。")
+    cur_st = get_system_state()
+    if cur_st == 3:
+        logger.warning("[系统模式 3] 当前配置处于模式 3 (全部关机停机)，Web 服务不启动。如需启动请将 config.json 中 state 改为 1 或 2，或执行: python3 router_qos.py --state 1")
+        sys.exit(0)
     server_address = ("0.0.0.0", port)
     httpd = ThreadingHTTPServer(server_address, QosHttpHandler)
     httpd.daemon_threads = True
-    logger.info(f"QoS Multi-threaded HTTP API Server listening on http://0.0.0.0:{port}")
+    logger.info(f"QoS Multi-threaded HTTP API Server listening on http://0.0.0.0:{port} (当前运行模式: {cur_st})")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
@@ -818,14 +930,49 @@ def run_server(port=8899):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python3 router_qos.py [--max-upload | --limit | --restore | --status | --exempt <MAC> | --unexempt <MAC> | --fluctuate <MAC> [period] | --stop-fluctuate <MAC> | --server [port] | --auto]")
+        print("Usage: python3 router_qos.py [--state [1|2|3] | --max-upload | --limit | --restore | --status | --exempt <MAC> | --unexempt <MAC> | --fluctuate <MAC> [period] | --stop-fluctuate <MAC> | --server [port] | --auto]")
         sys.exit(1)
 
     cmd = sys.argv[1].lower()
-    if cmd == "--max-upload":
+    if cmd == "--state":
+        if len(sys.argv) < 3:
+            cur_st = get_system_state()
+            desc_map = {
+                1: "模式 1: 正常运行 (Web 控制台正常，夜间巡检限速正常开启)",
+                2: "模式 2: 仅网页端正常运行，夜间巡检取消，其余照旧",
+                3: "模式 3: 全部停机关机 (路由器全速，流控与 Web 服务全部停止)"
+            }
+            print(f"当前系统运行状态: [state = {cur_st}] - {desc_map.get(cur_st, '未知模式')}")
+        else:
+            try:
+                target_st = int(sys.argv[2])
+                ok, msg = set_system_state(target_st)
+                if ok:
+                    print(f"成功切换系统状态: [state = {target_st}] - {msg}")
+                    if target_st in (1, 2):
+                        try:
+                            res = subprocess.run(["systemctl", "--user", "is-active", "net-speed-api.service"], capture_output=True, text=True)
+                            if "active" not in res.stdout:
+                                subprocess.run(["systemctl", "--user", "start", "net-speed-api.service"])
+                                print("已自动唤醒后台 net-speed-api.service 服务。")
+                        except Exception:
+                            pass
+                    elif target_st == 3:
+                        try:
+                            subprocess.run(["systemctl", "--user", "stop", "net-speed-api.service"])
+                            print("已自动停止后台 net-speed-api.service 服务。")
+                        except Exception:
+                            pass
+                else:
+                    print(f"切换失败: {msg}")
+                    sys.exit(1)
+            except ValueError:
+                print("错误: state 参数必须是 1, 2 或 3")
+                sys.exit(1)
+    elif cmd == "--max-upload":
         set_max_upload()
     elif cmd == "--limit":
-        set_full_limit()
+        set_full_limit(is_scheduled=True)
     elif cmd == "--restore":
         restore_rate_limit()
     elif cmd == "--exempt":
@@ -865,12 +1012,19 @@ def main():
         port = int(sys.argv[2]) if len(sys.argv) > 2 else 8899
         run_server(port)
     elif cmd == "--auto":
+        cur_st = get_system_state()
+        if cur_st == 2:
+            logger.info("[系统模式 2] 网页端正常运行，夜间巡检限速已取消，跳过自动调度。")
+            return
+        elif cur_st == 3:
+            logger.info("[系统模式 3] 系统处于全部关机停机状态，跳过自动调度。")
+            return
         now_time = datetime.now().strftime("%H:%M")
         cfg = load_config()
         limit_t = cfg.get("limit_time", "01:00")
         restore_t = cfg.get("restore_time", "06:00")
         if limit_t <= now_time < restore_t:
-            set_full_limit()
+            set_full_limit(is_scheduled=True)
         else:
             restore_rate_limit()
     else:

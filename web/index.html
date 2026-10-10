@@ -17,9 +17,17 @@
         <div class="brand-sub">智能路由器流控中心 · 波动仿真与设备精控</div>
       </div>
     </div>
-    <div class="system-pill">
-      <span class="live-dot"></span>
-      <span id="sysStatusText">服务正常 · 8899</span>
+    <div class="nav-right-group">
+      <div class="state-switch-pill" id="stateSwitchPill">
+        <span class="state-switch-label">运行模式:</span>
+        <button class="state-pill-btn active" id="stateBtn1" onclick="switchState(1)" title="模式 1: 正常运行 (Web 控制台正常，夜间限速巡检正常开启)">🟢 1 正常运行</button>
+        <button class="state-pill-btn" id="stateBtn2" onclick="switchState(2)" title="模式 2: 仅网页端正常运行，夜间巡检限速取消，其余照旧">🟡 2 巡检取消</button>
+        <button class="state-pill-btn state-pill-danger" id="stateBtn3" onclick="switchState(3)" title="模式 3: 全部停机关机 (恢复全速并退出 Web 与后台服务)">🔴 3 全部停机</button>
+      </div>
+      <div class="system-pill">
+        <span class="live-dot" id="liveDot"></span>
+        <span id="sysStatusText">正常运行 · 8899</span>
+      </div>
     </div>
   </header>
 
@@ -91,7 +99,7 @@
   </main>
 
   <footer class="footer-info">
-    💡 定时任务在 01:00-06:00 每 10 分钟巡检一次，<strong>严格仅在设备状态产生真实变动时记录日志</strong>。<br>
+    💡 <strong>运行模式说明</strong>：<strong>模式 1</strong> 正常开启 Web 控制台与 01:00-06:00 夜间限速巡检；<strong>模式 2</strong> 保持 Web 随时手动调速/放行/波动，但<strong>夜间定时巡检取消</strong>；<strong>模式 3</strong> 恢复千兆全速并停机退出服务。<br>
     🌊 网络波动模拟支持毫秒级平滑梯级循环，点击【停止波动】瞬间恢复千兆全速。
   </footer>
 </div>

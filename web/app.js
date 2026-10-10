@@ -270,6 +270,9 @@ function refreshStatus(force = false) {
     .then(r => r.json())
     .then(data => {
       if (!data || !data.list) return;
+      if (data.system_state !== undefined) {
+        updateStatePillUI(data.system_state);
+      }
       gDevices = data.list;
       updateHUD(gDevices);
       applyFiltersAndRender();
@@ -287,3 +290,69 @@ function refreshStatus(force = false) {
 }
 
 refreshStatus(true);
+
+function updateStatePillUI(st) {
+  [1, 2, 3].forEach(n => {
+    const btn = document.getElementById('stateBtn' + n);
+    if (btn) btn.classList.toggle('active', n === st);
+  });
+  const sysText = document.getElementById('sysStatusText');
+  const liveDot = document.getElementById('liveDot');
+  if (sysText) {
+    if (st === 1) {
+      sysText.textContent = '正常运行 · 8899';
+      if (liveDot) liveDot.style.background = '#10b981';
+    } else if (st === 2) {
+      sysText.textContent = '巡检取消 · 8899';
+      if (liveDot) liveDot.style.background = '#f59e0b';
+    } else if (st === 3) {
+      sysText.textContent = '服务停机';
+      if (liveDot) liveDot.style.background = '#ef4444';
+    }
+  }
+}
+
+function switchState(target) {
+  if (target === 3) {
+    const ok = confirm("⚠️ 确定要切换为【模式 3: 全部停机关机】吗？\n\n- 路由器将全面恢复千兆全速 (解除全部限速)\n- 终止所有网络波动模拟并重置放行标志位\n- Web 控制台与后台服务将全部安全停止退出\n\n确认后服务将停止响应。如需重新开机，需在终端执行: python3 router_qos.py --state 1");
+    if (!ok) return;
+  }
+
+  toast(`正在切换至模式 ${target}...`, 'success');
+  fetch('/api/system/state?state=' + target)
+    .then(r => r.json())
+    .then(res => {
+      if (res.code === 0) {
+        updateStatePillUI(target);
+        if (target === 3) {
+          toast('服务已完全关机，路由器已恢复千兆全速', 'error');
+          setTimeout(() => {
+            document.body.innerHTML = `
+              <div style="min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #f7f6f2; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-align: center; padding: 24px;">
+                <div style="font-size: 56px; margin-bottom: 16px;">🛑</div>
+                <h2 style="font-size: 24px; color: #1c1917; margin-bottom: 8px; font-weight: 700;">系统已全部停机关机 (模式 3)</h2>
+                <p style="color: #57534e; max-width: 480px; line-height: 1.6; margin-bottom: 24px; font-size: 14px;">
+                  路由器所有设备已全面恢复千兆全速，网络波动已全部终止，夜间巡检限速及 Web 服务已安全停止退出。
+                </p>
+                <div style="background: #ffffff; border: 1px solid #e7e5df; border-radius: 12px; padding: 14px 22px; font-family: monospace; font-size: 13px; color: #0284c7; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
+                  重新启动命令: python3 router_qos.py --state 1
+                </div>
+              </div>
+            `;
+          }, 800);
+        } else {
+          toast(res.message || '已成功切换为模式 ' + target, 'success');
+          refreshStatus(true);
+        }
+      } else {
+        toast('切换失败: ' + res.message, 'error');
+      }
+    })
+    .catch(err => {
+      if (target === 3) {
+        toast('服务已停机退出', 'error');
+      } else {
+        toast('网络请求失败', 'error');
+      }
+    });
+}

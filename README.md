@@ -3,6 +3,13 @@
 基于 Linux 的自动化定时网络限速与实时调速控制系统。通过逆向分析小米路由器（MiWiFi）LuCI 协议，实现夜间自动限速、早晨自动恢复，并提供支持手机/电脑端访问的现代 Web 控制面板与 RESTful HTTP API。包含单设备免限标志位（Exemption Flag）机制以及单设备网络波动周期模拟（Network Fluctuation Simulation）。
 
 ## 核心特性
+## 核心特性
+
+- **🕹️ 三档系统运行状态控制 (System State: 1 / 2 / 3)**：
+  - **`state = 1`（🟢 正常运行）**：默认模式。Web 控制台正常运行，凌晨 01:00 ~ 06:00 夜间自动限速巡检正常执行，全功能全开。
+  - **`state = 2`（🟡 网页端正常，夜间巡检取消）**：Web 控制台、手机端操作、单设备手动放行、一键限速、网络波动模拟等功能**全部照常可用**，但定时巡检（Crontab/自动限速）**完全取消并跳过**，夜间不影响任何设备速率。
+  - **`state = 3`（🔴 全部停机关机）**：彻底停机模式。瞬间解除路由器上所有设备的限速恢复千兆全速，终止所有网络波动与标志位，并优雅停止 Web API 与后台守护进程。
+  - **三端无缝切换**：可通过 `config.json` 静态持久化配置，或通过 CLI 命令 `python3 router_qos.py --state <1|2|3>`，亦可在 Web 控制台顶部一键无感切换。
 
 - **单设备网络波动周期模拟 (Network Fluctuation Simulation)**：
   - 支持针对局域网内任意单个目标设备（按 MAC 识别）启动网络波动模拟。
@@ -66,6 +73,7 @@ nano config.json
 {
   "router_ip": "192.168.31.1",
   "password": "YOUR_ROUTER_PASSWORD",
+  "state": 1,
   "speed_kb": 13,
   "limit_time": "01:00",
   "restore_time": "06:00",
@@ -75,6 +83,8 @@ nano config.json
   ]
 }
 ```
+
+- `state`: 运行状态模式 (`1` = 正常运行, `2` = 网页端正常/夜间巡检取消, `3` = 全部停机恢复全速)
 
 - `router_ip`: 路由器网关 IP（通常为 `192.168.31.1`）
 - `password`: 小米路由器 Web 管理密码
@@ -94,6 +104,11 @@ python3 router_qos.py --server 8899
 ## HTTP API 接口说明
 
 - **Web 控制面板**：`GET http://<SERVER_IP>:8899`
+- **查询或切换系统运行模式 (1/2/3)**：
+  ```http
+  GET / POST http://<SERVER_IP>:8899/api/system/state?state=1
+  # 参数 state: 1 (正常运行), 2 (巡检取消), 3 (全部停机退出)
+  ```
 - **单设备开启网络波动模拟**：
   ```http
   GET / POST http://<SERVER_IP>:8899/api/device/fluctuate?mac=AA:BB:CC:DD:EE:01&period=30
@@ -131,6 +146,10 @@ python3 router_qos.py --server 8899
 ## 命令行用法 (CLI)
 
 ```bash
+# 查看或切换系统运行状态模式 (1=正常, 2=巡检取消, 3=全部停机)
+python3 router_qos.py --state
+python3 router_qos.py --state <1|2|3>
+
 # 查看所有设备当前限速状态、标志位与波动情况
 python3 router_qos.py --status
 
