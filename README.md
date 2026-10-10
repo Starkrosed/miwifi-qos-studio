@@ -29,7 +29,11 @@
 ├── config.example.json # 路由器参数与限速配置示例文件（复制为 config.json）
 ├── config.json         # 实际运行配置文件 (包含密码与私有MAC，已被 .gitignore 保护)
 ├── state.json          # 放行标志位持久化记录 (自动生成，已加 .gitignore)
-├── router_qos.py       # 核心调度脚本与内置 HTTP API / Web Studio 服务器
+├── router_qos.py       # 核心后端调度脚本与内置 HTTP REST API 服务器
+├── web/                # 独立前端项目目录 (HTML/CSS/JS 模块化分离)
+│   ├── index.html      # 页面结构 DOM
+│   ├── style.css       # 米白色 Warm Ivory 主题样式表
+│   └── app.js          # 前端交互、DOM 差量增量渲染与波形动画逻辑
 ├── qos.log             # 运行日志（自动生成，仅变动时记录，已加 .gitignore）
 ├── .gitignore          # Git 忽略规则
 └── README.md           # 项目文档

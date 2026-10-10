@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>MiWiFi QoS Studio · 极速流控中心</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="shell">
+  <!-- 头部 HUD -->
+  <header class="nav-header">
+    <div class="brand-group">
+      <div class="brand-logo">⚡</div>
+      <div>
+        <div class="brand-title">MiWiFi QoS Studio</div>
+        <div class="brand-sub">智能路由器流控中心 · 波动仿真与设备精控</div>
+      </div>
+    </div>
+    <div class="system-pill">
+      <span class="live-dot"></span>
+      <span id="sysStatusText">服务正常 · 8899</span>
+    </div>
+  </header>
+
+  <!-- 数据看板 HUD -->
+  <section class="hud-grid">
+    <div class="hud-card">
+      <span class="hud-label">在线/已知设备</span>
+      <span class="hud-value" id="hudTotal">-</span>
+    </div>
+    <div class="hud-card">
+      <span class="hud-label">手动免限放行</span>
+      <span class="hud-value" style="color:#059669;" id="hudExempt">-</span>
+    </div>
+    <div class="hud-card">
+      <span class="hud-label">受控/限速中</span>
+      <span class="hud-value" style="color:#d97706;" id="hudLimited">-</span>
+    </div>
+    <div class="hud-card" id="hudFlucCard">
+      <span class="hud-label">网络波动模拟</span>
+      <span class="hud-value" style="color:#7c3aed;" id="hudFluc">0</span>
+    </div>
+  </section>
+
+  <!-- 全局批量控制 Deck -->
+  <section class="deck-card">
+    <div class="deck-title">
+      <span>⚡ 全局快速调度</span>
+      <span style="font-size:11px;font-weight:normal;opacity:0.6;">即刻下发至 LuCI 核心</span>
+    </div>
+    <div class="deck-grid">
+      <button class="action-btn btn-upload" onclick="callApi('/api/max-upload', this)">
+        <div class="btn-icon-wrap">🚀</div>
+        <div class="btn-texts">
+          <span class="btn-title">上传开到最大</span>
+          <span class="btn-desc">上行解除封顶 (全速) · 下行保持限速</span>
+        </div>
+      </button>
+
+      <button class="action-btn btn-night" onclick="callApi('/api/limit', this)">
+        <div class="btn-icon-wrap">🐢</div>
+        <div class="btn-texts">
+          <span class="btn-title">全员夜间限速</span>
+          <span class="btn-desc">上下行深度限速 0.1M · 跳过已放行</span>
+        </div>
+      </button>
+
+      <button class="action-btn btn-restore-all" onclick="callApi('/api/restore', this)">
+        <div class="btn-icon-wrap">⚡</div>
+        <div class="btn-texts">
+          <span class="btn-title">恢复所有全速并清空标志位</span>
+          <span class="btn-desc">解除全部限速 · 立即停止所有波动 · 标志位清零复位</span>
+        </div>
+      </button>
+    </div>
+  </section>
+
+  <!-- 搜索与筛选工具条 -->
+  <div class="filter-bar">
+    <div class="search-input-wrap">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="searchInput" class="search-input" placeholder="搜索设备名称、IP 或 MAC..." oninput="handleSearch()">
+    </div>
+    <button class="btn-tool" onclick="refreshStatus(true)">🔄 刷新设备</button>
+  </div>
+
+  <!-- 设备列表容器 (零卡顿增量渲染) -->
+  <main id="deviceGrid" class="device-grid">
+    <div style="grid-column: 1/-1; text-align:center; padding: 40px; color:#64748b;">正在极速连接路由器...</div>
+  </main>
+
+  <footer class="footer-info">
+    💡 定时任务在 01:00-06:00 每 10 分钟巡检一次，<strong>严格仅在设备状态产生真实变动时记录日志</strong>。<br>
+    🌊 网络波动模拟支持毫秒级平滑梯级循环，点击【停止波动】瞬间恢复千兆全速。
+  </footer>
+</div>
+
+<div id="toastContainer" class="toast-container"></div>
+<script src="/app.js"></script>
+</body>
+</html>
